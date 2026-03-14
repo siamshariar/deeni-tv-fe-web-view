@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
   // Vercel injects the visitor's ISO 3166-1 alpha-2 country code into this header.
   // Falls back gracefully when running locally (header absent → default URL).
   const vercelCountry = request.headers.get('x-vercel-ip-country') ?? ''
+  console.log('donation-url x-vercel-ip-country:', vercelCountry)
 
   // ── Local testing override ──────────────────────────────────────────────────
   // ?country=BD  → Bangladesh URL
