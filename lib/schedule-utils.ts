@@ -386,6 +386,14 @@ export function clearPreviousVideos(channelId: string): void {
   }
 }
 
+// Returns a list of preloads that are due now or in the past. This is a lightweight
+// helper for ScheduleService and doesn't affect the main schedule logic.
+export function checkScheduledPreloads(): ScheduledPreload[] {
+  // For now, this is a no-op placeholder. Returning an empty list keeps the
+  // scheduling service from triggering any preloads.
+  return []
+}
+
 // Get channel programs (falls back to Bangla if channel has no programs)
 export function getChannelPrograms(channelId: string): VideoProgram[] {
   const channel = CHANNELS.find(c => c.id === channelId)
