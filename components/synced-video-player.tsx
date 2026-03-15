@@ -1408,6 +1408,13 @@ export function SyncedVideoPlayer({
       setDisplayTime(formatTime(startTime))
       setTimeRemaining(formatTime(timeRemaining))
       setVideoDuration(program.duration)
+
+      // If this is the first load (no previous history), add the current video
+      // to the history so the Previous Programs list isn't empty on first open.
+      if (savedPrevious.length === 0) {
+        const updatedPrev = addToPreviousVideos(channelId, program)
+        setPreviousVideos(updatedPrev)
+      }
       
       // Get next program from upcomingPrograms
       if (result.upcomingPrograms && result.upcomingPrograms.length > 0) {
