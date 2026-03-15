@@ -116,6 +116,7 @@ export function OSDOverlay() {
       <ScheduleModal
         isOpen={activeModal === 'schedule'}
         onClose={() => setActiveModal(null)}
+        schedule={[]}
       />
       <AboutModal
         isOpen={activeModal === 'about'}
