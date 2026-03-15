@@ -882,9 +882,17 @@ export function SyncedVideoPlayer({
   const brandedOverlayProgramRef = useRef<string>('')
   // iframeVisible — keeps the iframe container at opacity:0 until the REAL video
   // fires its first PLAYING event.  Prevents the primer (zoo) video from flashing
-  // on screen.  Once true it stays true; subsequent transitions are hidden by
-  // BrandedLoadingOverlay sitting on top instead.
+  // on screen.
   const [iframeVisible, setIframeVisible] = useState(false)
+
+  // Hide the branded loading overlay as soon as the real iframe starts rendering.
+  // This ensures the overlay is visible while the iframe is still loading and
+  // automatically disappears when playback begins.
+  useEffect(() => {
+    if (iframeVisible) {
+      setShowBrandedOverlay(false)
+    }
+  }, [iframeVisible])
   
   // Channel State
   const [apiChannels, setApiChannels] = useState<ApiChannel[]>([])
@@ -1445,29 +1453,39 @@ export function SyncedVideoPlayer({
       // Notify parent with fresh schedule data so ScheduleModal is up-to-date
       notifyParentScheduleChange(program, upcoming)
       
-      // Previous videos: localStorage (real user history) always takes priority.
-      // API previousPrograms are only schedule-calculated — treat them as optional extras.
-      const existingPrevious = getPreviousVideos(channelId)
-      if (existingPrevious.length > 0) {
-        // User has real watch history — use it as-is, don't let API overwrite order
-        setPreviousVideos(existingPrevious)
-      } else if (result.previousPrograms && result.previousPrograms.length > 0) {
-        // No local history yet — seed from API schedule data as a starting point
-        const apiPrevious: VideoProgram[] = result.previousPrograms.map((prog: { ytVideoId: string; title: string; duration: number }) => ({
-          id: prog.ytVideoId,
-          videoId: prog.ytVideoId,
-          title: prog.title,
-          description: prog.title,
-          duration: prog.duration,
-          category: 'Lecture',
-          language: 'Bengali',
-          channelId: channelId,
-          thumbnail: `https://img.youtube.com/vi/${prog.ytVideoId}/maxresdefault.jpg`
-        }))
-        setPreviousVideos(apiPrevious.slice(0, 30))
-        savePreviousVideos(channelId, apiPrevious.slice(0, 30))
+      // Prefer the server's previous-program list (most accurate). When we must
+      // fall back to the local schedule (e.g. /api/current-video gets a local
+      // fallback), we do NOT want to show stale historical data.
+      const isLocalFallback = result._source === 'local-schedule'
+      const apiPrevious: VideoProgram[] = isLocalFallback
+        ? []
+        : (result.previousPrograms || []).map((prog: { ytVideoId: string; title: string; duration: number }) => ({
+            id: prog.ytVideoId,
+            videoId: prog.ytVideoId,
+            title: prog.title,
+            description: prog.title,
+            duration: prog.duration,
+            category: 'Lecture',
+            language: 'Bengali',
+            channelId: channelId,
+            thumbnail: `https://img.youtube.com/vi/${prog.ytVideoId}/maxresdefault.jpg`
+          }))
+
+      if (!isLocalFallback && apiPrevious.length > 0) {
+        const existingPrevious = getPreviousVideos(channelId)
+        const mergedPrevious = [
+          ...apiPrevious,
+          ...existingPrevious.filter(v => !apiPrevious.some(api => api.id === v.id))
+        ].slice(0, 30)
+
+        setPreviousVideos(mergedPrevious)
+        savePreviousVideos(channelId, mergedPrevious)
+      } else {
+        // No server-provided previous program data — clear any stale history
+        setPreviousVideos([])
+        savePreviousVideos(channelId, [])
       }
-      
+
       lastVideoIdRef.current = program.videoId
       
       // No branded overlay on initial channel load — only on video transitions (playNextVideo)
@@ -2240,9 +2258,9 @@ export function SyncedVideoPlayer({
           />
           <div className="absolute inset-0 w-full h-full pointer-events-auto" />
           
-          {/* Branded Loading Overlay - Shows during YouTube loading, hides on PLAYING event */}
+          {/* Branded Loading Overlay - Shows while the iframe is still loading and hides when the video starts playing */}
           <BrandedLoadingOverlay
-            isVisible={showBrandedOverlay && !showStartScreen && !isLoading}
+            isVisible={showBrandedOverlay && !showStartScreen && !isLoading && !iframeVisible}
             programName={brandedOverlayProgramRef.current || currentProgram?.title || ''}
           />
           
