@@ -72,49 +72,58 @@ export function ScheduleModal({ isOpen, onClose, schedule, currentProgramId }: S
             
             {/* Schedule List - Display only, no hover/click */}
             <div className="overflow-y-auto max-h-[calc(80vh-80px)] p-4">
-              <div className="space-y-2">
-                {filteredSchedule.map((program, index) => {
-                  // Only the FIRST occurrence of the current ID gets the Now Playing badge
-                  const isCurrent = index === nowPlayingFilteredIndex
-                  // Up Next is the item immediately after the Now Playing item
-                  const isUpNext = nowPlayingFilteredIndex >= 0 && index === nowPlayingFilteredIndex + 1
-                  
-                  return (
-                    <motion.div
-                      key={`${program.id}-${index}`}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className={`p-4 rounded-xl border select-none ${
-                        isCurrent 
-                          ? 'bg-primary/10 border-primary/30' 
-                          : 'bg-white/5 border-white/10'
-                      }`}
-                    >
-                      <div className="flex flex-col">
-                          <div className="flex items-center gap-2 mb-1.5">
-                            {isCurrent && (
-                              <span className="px-2 py-0.5 text-xs font-medium bg-primary/20 text-primary rounded-full">
-                                Now Playing
-                              </span>
-                            )}
-                            {!isCurrent && isUpNext && (
-                              <span className="px-2 py-0.5 text-xs font-medium bg-yellow-500/20 text-yellow-300 rounded-full">
-                                Up Next
-                              </span>
-                            )}
+              {filteredSchedule.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                  <p className="text-white/60 text-sm mb-2">No previous program available.</p>
+                  <p className="text-white/40 text-xs">
+                    The schedule is currently unavailable.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredSchedule.map((program, index) => {
+                    // Only the FIRST occurrence of the current ID gets the Now Playing badge
+                    const isCurrent = index === nowPlayingFilteredIndex
+                    // Up Next is the item immediately after the Now Playing item
+                    const isUpNext = nowPlayingFilteredIndex >= 0 && index === nowPlayingFilteredIndex + 1
+                    
+                    return (
+                      <motion.div
+                        key={`${program.id}-${index}`}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        className={`p-4 rounded-xl border select-none ${
+                          isCurrent 
+                            ? 'bg-primary/10 border-primary/30' 
+                            : 'bg-white/5 border-white/10'
+                        }`}
+                      >
+                        <div className="flex flex-col">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              {isCurrent && (
+                                <span className="px-2 py-0.5 text-xs font-medium bg-primary/20 text-primary rounded-full">
+                                  Now Playing
+                                </span>
+                              )}
+                              {!isCurrent && isUpNext && (
+                                <span className="px-2 py-0.5 text-xs font-medium bg-yellow-500/20 text-yellow-300 rounded-full">
+                                  Up Next
+                                </span>
+                              )}
+                            </div>
+                            <h3 className={`font-semibold leading-snug ${
+                              isCurrent ? 'text-primary' : 'text-white'
+                            }`}>
+                              {program.title}
+                            </h3>
+                            <p className="text-white/40 text-xs mt-1.5">{formatDuration(program.duration)}</p>
                           </div>
-                          <h3 className={`font-semibold leading-snug ${
-                            isCurrent ? 'text-primary' : 'text-white'
-                          }`}>
-                            {program.title}
-                          </h3>
-                          <p className="text-white/40 text-xs mt-1.5">{formatDuration(program.duration)}</p>
-                        </div>
-                    </motion.div>
-                  )
-                })}
-              </div>
+                      </motion.div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </motion.div>
         </>
