@@ -938,6 +938,8 @@ export function SyncedVideoPlayer({
   const masterEpochRef = useRef<number>(MASTER_EPOCH_START)
   const timeUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const videoEndTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const hiddenAtRef = useRef<number | null>(null)
+  const lastResumeAtRef = useRef<number>(0)
   const isTransitioningRef = useRef(false)
   // "Latest value" refs — used inside syncWithServer so we don't need those values
   // in the useCallback dependency array (which would reset the 5-min interval on each video change)
@@ -966,6 +968,7 @@ export function SyncedVideoPlayer({
     seekTo,
     getCurrentTime,
     play,
+    pause,
     destroy
   } = useYouTubePlayer()
 
@@ -1670,6 +1673,8 @@ export function SyncedVideoPlayer({
               play()
             } else if (state === YT_STATE.BUFFERING) {
               console.log('⏳ 🍎 Buffering...')
+              setShowBrandedOverlay(true)
+              setIframeVisible(false)
             } else if (state === YT_STATE.CUED) {
               play()
             }
@@ -1756,6 +1761,8 @@ export function SyncedVideoPlayer({
               play()
             } else if (state === YT_STATE.BUFFERING) {
               console.log('⏳ 22 Video buffering...')
+              setShowBrandedOverlay(true)
+              setIframeVisible(false)
             } else if (state === YT_STATE.CUED) {
               console.log('🎬 22 Video cued - playing')
               play()
@@ -2178,31 +2185,44 @@ export function SyncedVideoPlayer({
     }
   }, [playerReady, syncWithServer])
 
-  // When returning from background/lock screen, attempt to resume playback and refresh schedule
+  // When returning from background/lock screen, attempt to refresh schedule & resume live playback
   useEffect(() => {
+    const resumeThresholdMs = 3000
+    const minIntervalBetweenResumeMs = 7000
+
     const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') return
-
-      if (!playerReady || !currentProgram) return
-
-      // Briefly show the loading wrapper / now playing banner while we resume
-      setShowBrandedOverlay(true)
-      setTimeout(() => setShowBrandedOverlay(false), 2500)
-
-      // Try to resume playback (Android often pauses when app is backgrounded)
-      try {
-        play()
-      } catch {
-        // ignore errors
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now()
+        // Ensure playback does not continue while the app is in the background
+        pause()
+        return
       }
 
-      // Refresh schedule data so UI stays in sync
-      syncWithServer()
+      const now = Date.now()
+      const hiddenAt = hiddenAtRef.current
+      const hiddenDuration = hiddenAt ? now - hiddenAt : 0
+
+      // Ignore quick tab switches / app toggles
+      if (hiddenDuration < resumeThresholdMs) return
+      if (now - lastResumeAtRef.current < minIntervalBetweenResumeMs) return
+      lastResumeAtRef.current = now
+      hiddenAtRef.current = null
+
+      if (!playerReady || !currentChannelId) return
+
+      // Show the branded loading wrapper while we refresh schedule and reload
+      setShowBrandedOverlay(true)
+      setIframeVisible(false)
+
+      // Try to refresh schedule and the current program (will also load the
+      // correct live video segment). This helps avoid resuming from the old
+      // playback position after returning from background.
+      void loadChannel(currentChannelId)
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [playerReady, currentProgram, play, syncWithServer])
+  }, [playerReady, currentChannelId, loadChannel, pause])
 
   // Program Overlay - Shows every 2-3 minutes for a few seconds
   useEffect(() => {
