@@ -443,17 +443,6 @@ export function useYouTubePlayer() {
     return 0
   }, [])
   
-  const pause = useCallback(() => {
-    if (!playerRef.current) return false
-    try {
-      if (typeof playerRef.current.pauseVideo === 'function') {
-        playerRef.current.pauseVideo()
-        return true
-      }
-    } catch (err) {}
-    return false
-  }, [])
-
   const destroy = useCallback(() => {
     if (playerRef.current && typeof playerRef.current.destroy === 'function') {
       try {
@@ -481,7 +470,6 @@ export function useYouTubePlayer() {
     setVolume,
     setMuted,
     play,
-    pause,
     seekTo,
     getCurrentTime,
     destroy
