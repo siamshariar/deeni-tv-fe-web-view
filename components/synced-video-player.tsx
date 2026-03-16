@@ -1632,7 +1632,9 @@ export function SyncedVideoPlayer({
               setIframeVisible(true) // Reveal iframe — real video is now rendering
               setIsMuted(false)
               onStartClick?.()
-              setTimeout(() => setShowBrandedOverlay(false), 3000)
+              // Keep the branded overlay visible for a short moment after playback starts
+              // (previously ~4s; adjust here if you want a longer/shorter delay)
+              setTimeout(() => setShowBrandedOverlay(false), 4000)
             } else if (state === YT_STATE.PAUSED) {
               // iOS sometimes auto-pauses; resume
               play()
@@ -1717,7 +1719,7 @@ export function SyncedVideoPlayer({
               setIframeVisible(true)
               setTimeout(() => {
                 setShowBrandedOverlay(false) // Hide branded overlay when playback starts
-              }, 3000);
+              }, 4000);
               
             } else if (state === YT_STATE.PAUSED) {
               console.log('⏸️ 22 Video paused - resuming')
@@ -2187,7 +2189,7 @@ export function SyncedVideoPlayer({
     const overlayInterval = setInterval(() => {
       setShowProgramOverlay(true)
       // Hide after 8-10 seconds
-      const hideDelay = 8000 + Math.random() * 2000 // Random 8-10 seconds
+      const hideDelay = 8000 + Math.random() * 4000 // Random 8-10 seconds
       setTimeout(() => {
         setShowProgramOverlay(false)
       }, hideDelay)
@@ -2197,7 +2199,7 @@ export function SyncedVideoPlayer({
     const initialTimeout = setTimeout(() => {
       setShowProgramOverlay(true)
       // Hide after 8-10 seconds
-      const hideDelay = 8000 + Math.random() * 2000 // Random 8-10 seconds
+      const hideDelay = 8000 + Math.random() * 4000 // Random 8-10 seconds
       setTimeout(() => {
         setShowProgramOverlay(false)
       }, hideDelay)
