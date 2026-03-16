@@ -2042,35 +2042,41 @@ export function SyncedVideoPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggerReload])
 
-  // Handle app background/resume so we always show a fresh live stream on return
+  // Handle app background/resume so we can resume live playback quickly
   useEffect(() => {
     const onVisibilityChange = () => {
       if (document.hidden) {
         appInBackgroundRef.current = true
-        console.log('🌙 App hidden — stopping stream and releasing player')
-        setPlayerReady(false)
-        setIframeVisible(false)
+        console.log('🌙 App hidden — pausing stream (keep state alive)')
         setShowBrandedOverlay(false)
         setShowProgramOverlay(false)
         setIsLoading(false)
-        destroy()
+        // Keep the YT player alive so when the user returns we can resume quickly
       } else if (appInBackgroundRef.current) {
         appInBackgroundRef.current = false
-        console.log('☀️ App resumed — refreshing live stream')
+        console.log('☀️ App resumed — syncing with live stream')
         if (currentChannelId && !showStartScreen) {
-          // Show loading state immediately to avoid black/paused frames
+          // Quick resume: keep the same player instance and jump back into live
           setIsLoading(true)
           setShowBrandedOverlay(true)
-          setIframeVisible(false)
           setApiError(null)
-          loadChannel(currentChannelId)
+
+          if (playerReady) {
+            // Try to resume playback immediately (browsers may have paused it)
+            play()
+            // Re-sync with server to stay on the live schedule
+            syncWithServer()
+          } else {
+            // Player was not ready (e.g. app was killed/cleared) — do a full reload
+            loadChannel(currentChannelId)
+          }
         }
       }
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
-  }, [currentChannelId, loadChannel, destroy, showStartScreen])
+  }, [currentChannelId, showStartScreen, play, syncWithServer, playerReady, loadChannel])
 
   // Handle playing from previous videos
   const handlePlayFromPrevious = useCallback((video: VideoProgram) => {
