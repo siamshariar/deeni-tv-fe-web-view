@@ -458,12 +458,10 @@ const LiveBadge = ({ variant = 'default', isMobile = false }: { variant?: 'defau
 // Branded Loading Overlay - Shows during YouTube iframe loading (event-based, not timer-based)
 const BrandedLoadingOverlay = ({ 
   isVisible, 
-  programName,
-  startTime,
+  programName 
 }: { 
   isVisible: boolean
   programName: string
-  startTime?: string | null
 }) => {
   return (
     <AnimatePresence>
@@ -516,16 +514,11 @@ const BrandedLoadingOverlay = ({
                 className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3"
               >
                 <p className="text-white/50 uppercase tracking-wider font-medium text-[7px] sm:text-[9px] md:text-[10px] mb-0.5 sm:mb-1">
-                  Now Playing
+                  Watching
                 </p>
                 <h3 className="text-white font-bold leading-tight line-clamp-2 text-sm sm:text-base md:text-lg lg:text-xl">
                   {programName || 'Loading program...'}
                 </h3>
-                {startTime && (
-                  <p className="text-white/60 text-[10px] sm:text-xs mt-1">
-                    Starts at {startTime}
-                  </p>
-                )}
               </motion.div>
             </div>
             
@@ -922,9 +915,6 @@ export function SyncedVideoPlayer({
   const [playerReady, setPlayerReady] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
   const [serverTimeOffset, setServerTimeOffset] = useState(0)
-
-  // Computed program timing (used for loading/buffering UI)
-  const [programStartTime, setProgramStartTime] = useState<string | null>(null)
   
   // Refs
   const playerRef = useRef<HTMLDivElement>(null)
@@ -938,9 +928,12 @@ export function SyncedVideoPlayer({
   const masterEpochRef = useRef<number>(MASTER_EPOCH_START)
   const timeUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const videoEndTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const hiddenAtRef = useRef<number | null>(null)
-  const lastResumeAtRef = useRef<number>(0)
   const isTransitioningRef = useRef(false)
+  // Prevent double-loads when the app quickly loses/regains focus (or user taps reload fast)
+  const isStreamLoadingRef = useRef(false)
+  // Track whether the app is currently in the background (visibility API)
+  const appInBackgroundRef = useRef(false)
+  
   // "Latest value" refs — used inside syncWithServer so we don't need those values
   // in the useCallback dependency array (which would reset the 5-min interval on each video change)
   const currentProgramRef = useRef<VideoProgram | null>(null)
@@ -968,7 +961,6 @@ export function SyncedVideoPlayer({
     seekTo,
     getCurrentTime,
     play,
-    pause,
     destroy
   } = useYouTubePlayer()
 
@@ -1021,29 +1013,6 @@ export function SyncedVideoPlayer({
     setShowStartScreen(showStartModal)
   }, [showStartModal])
 
-  // Update program start time string (used in loading/buffering UI)
-  useEffect(() => {
-    if (!currentProgram) {
-      setProgramStartTime(null)
-      return
-    }
-
-    if (currentProgram.startTime) {
-      const start = new Date(currentProgram.startTime)
-      setProgramStartTime(start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-      return
-    }
-
-    // Fallback: approximate start time based on current playback position
-    if (currentTime > 0) {
-      const start = new Date(Date.now() + serverTimeOffset - currentTime * 1000)
-      setProgramStartTime(start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-      return
-    }
-
-    setProgramStartTime(null)
-  }, [currentProgram?.startTime, currentTime, serverTimeOffset])
-
   // Handle external openHistoryModal prop
   useEffect(() => {
     if (openHistoryModal && !showPreviousModal) {
@@ -1093,11 +1062,6 @@ export function SyncedVideoPlayer({
     setCurrentTime(startTime)
     setDisplayTime(formatTime(startTime))
     setVideoDuration(nextProgram.duration)
-    setProgramStartTime(
-      nextProgram.startTime
-        ? new Date(nextProgram.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    )
     
     // Shift the API-populated upcoming queue: nextProgram is now playing,
     // so remove it from the front and promote the rest
@@ -1377,7 +1341,9 @@ export function SyncedVideoPlayer({
   useEffect(() => { syncImmediateAfterTransitionRef.current = syncImmediateAfterTransition }, [syncImmediateAfterTransition])
 
   const loadChannel = useCallback(async (channelId: string) => {
-    if (isLoading) return
+    // Prevent concurrent loads (e.g. multiple visibilitychange events / rapid reload taps)
+    if (isLoading || isStreamLoadingRef.current) return
+    isStreamLoadingRef.current = true
     
     setIsLoading(true)
     setApiError(null)
@@ -1430,7 +1396,6 @@ export function SyncedVideoPlayer({
         title: result.currentProgram.title,
         description: result.currentProgram.title,
         duration: result.currentProgram.duration,
-        startTime: result.currentProgram.startTime ? new Date(Number(result.currentProgram.startTime)) : undefined,
         category: 'Lecture',
         language: 'Bengali',
         channelId: channelId,
@@ -1673,8 +1638,6 @@ export function SyncedVideoPlayer({
               play()
             } else if (state === YT_STATE.BUFFERING) {
               console.log('⏳ 🍎 Buffering...')
-              setShowBrandedOverlay(true)
-              setIframeVisible(false)
             } else if (state === YT_STATE.CUED) {
               play()
             }
@@ -1761,8 +1724,6 @@ export function SyncedVideoPlayer({
               play()
             } else if (state === YT_STATE.BUFFERING) {
               console.log('⏳ 22 Video buffering...')
-              setShowBrandedOverlay(true)
-              setIframeVisible(false)
             } else if (state === YT_STATE.CUED) {
               console.log('🎬 22 Video cued - playing')
               play()
@@ -1791,6 +1752,8 @@ export function SyncedVideoPlayer({
       console.error('API call failed:', error)
       setApiError(error instanceof Error ? error.message : 'Failed to load video')
       setIsLoading(false)
+    } finally {
+      isStreamLoadingRef.current = false
     }
   }, [isLoading, playerReady, isPrimedRef, volume, initializePlayer, loadVideo, seekTo, play, setYouTubeVolume, setYouTubeMuted, onChannelChange, onStartClick, getDuration, fetchFromBrowserAPI, notifyParentScheduleChange])
 
@@ -1860,11 +1823,12 @@ export function SyncedVideoPlayer({
     try {
       const res = await clientFetchWithAuth('https://api.deeniinfotech.com/api/tv-channels')
       if (res?.data?.length) {
-          const freshChannels: ApiChannel[] = res.data
-          const storedChannels: ApiChannel[] = getStoredApiChannels()
+        const freshChannels = res.data
+        const storedChannels = getStoredApiChannels()
+
         // Check if there are differences
         const hasChanges = freshChannels.length !== storedChannels.length ||
-          freshChannels.some((fresh, index) => {
+          freshChannels.some((fresh: any, index: number) => {
             const stored = storedChannels[index]
             return !stored || fresh.id !== stored.id || fresh.title !== stored.title
           })
@@ -2076,6 +2040,36 @@ export function SyncedVideoPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggerReload])
 
+  // Handle app background/resume so we always show a fresh live stream on return
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        appInBackgroundRef.current = true
+        console.log('🌙 App hidden — stopping stream and releasing player')
+        setPlayerReady(false)
+        setIframeVisible(false)
+        setShowBrandedOverlay(false)
+        setShowProgramOverlay(false)
+        setIsLoading(false)
+        destroy()
+      } else if (appInBackgroundRef.current) {
+        appInBackgroundRef.current = false
+        console.log('☀️ App resumed — refreshing live stream')
+        if (currentChannelId && !showStartScreen) {
+          // Show loading state immediately to avoid black/paused frames
+          setIsLoading(true)
+          setShowBrandedOverlay(true)
+          setIframeVisible(false)
+          setApiError(null)
+          loadChannel(currentChannelId)
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [currentChannelId, loadChannel, destroy, showStartScreen])
+
   // Handle playing from previous videos
   const handlePlayFromPrevious = useCallback((video: VideoProgram) => {
     if (!currentChannelId || !playerReady || isTransitioningRef.current) return
@@ -2185,45 +2179,6 @@ export function SyncedVideoPlayer({
     }
   }, [playerReady, syncWithServer])
 
-  // When returning from background/lock screen, attempt to refresh schedule & resume live playback
-  useEffect(() => {
-    const resumeThresholdMs = 3000
-    const minIntervalBetweenResumeMs = 7000
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        hiddenAtRef.current = Date.now()
-        // Ensure playback does not continue while the app is in the background
-        pause()
-        return
-      }
-
-      const now = Date.now()
-      const hiddenAt = hiddenAtRef.current
-      const hiddenDuration = hiddenAt ? now - hiddenAt : 0
-
-      // Ignore quick tab switches / app toggles
-      if (hiddenDuration < resumeThresholdMs) return
-      if (now - lastResumeAtRef.current < minIntervalBetweenResumeMs) return
-      lastResumeAtRef.current = now
-      hiddenAtRef.current = null
-
-      if (!playerReady || !currentChannelId) return
-
-      // Show the branded loading wrapper while we refresh schedule and reload
-      setShowBrandedOverlay(true)
-      setIframeVisible(false)
-
-      // Try to refresh schedule and the current program (will also load the
-      // correct live video segment). This helps avoid resuming from the old
-      // playback position after returning from background.
-      void loadChannel(currentChannelId)
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [playerReady, currentChannelId, loadChannel, pause])
-
   // Program Overlay - Shows every 2-3 minutes for a few seconds
   useEffect(() => {
     if (!playerReady || !currentProgram || showStartScreen) return
@@ -2269,7 +2224,9 @@ export function SyncedVideoPlayer({
       if (videoEndTimeoutRef.current) {
         clearTimeout(videoEndTimeoutRef.current)
       }
-      //destroy()
+      // Ensure the YouTube player is destroyed on unmount so we don't leak
+      // memory or keep the iframe active when the user navigates away.
+      destroy()
     }
   }, [destroy])
 
@@ -2323,10 +2280,6 @@ export function SyncedVideoPlayer({
 
   const isLastInCycle = currentProgram && cycleInfo.total ? cycleInfo.current === cycleInfo.total : false
 
-  // Derived program info for loading/buffering UI
-  const currentProgramTitle = brandedOverlayProgramRef.current || currentProgram?.title || 'Live broadcast'
-  const currentProgramStartTime = programStartTime
-
   return (
     <div className="relative flex items-center justify-center bg-gradient-to-br from-zinc-950 via-zinc-900 to-black min-h-screen w-full overflow-hidden">
       <div className={`relative w-full ${
@@ -2355,9 +2308,8 @@ export function SyncedVideoPlayer({
           
           {/* Branded Loading Overlay - Shows while the iframe is still loading and hides when the video starts playing */}
           <BrandedLoadingOverlay
-            isVisible={showBrandedOverlay && !showStartScreen}
+            isVisible={showBrandedOverlay && !showStartScreen && !isLoading && !iframeVisible}
             programName={brandedOverlayProgramRef.current || currentProgram?.title || ''}
-            startTime={currentProgramStartTime}
           />
           
           {/* Time/Date Display REMOVED - per requirements */}
@@ -2416,18 +2368,9 @@ export function SyncedVideoPlayer({
                   transition={{ delay: 0.2 }}
                   className={`text-white ${isMobile ? 'text-base' : 'text-lg'} mb-2 font-medium`}
                 >
-                  {currentProgramTitle}
+                  Tuning into your broadcast...
                 </motion.p>
-                {currentProgramStartTime && (
-                  <motion.p
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.25 }}
-                    className={`text-white/60 ${isMobile ? 'text-xs' : 'text-sm'} mb-2`}
-                  >
-                    Starts at {currentProgramStartTime}
-                  </motion.p>
-                )}
+                
                 <motion.p 
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
